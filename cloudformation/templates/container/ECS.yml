@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Create a ECS cluster
+
+# ----------------------------
+# --Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+
+  Environment:
+    Type: String
+
+  VPC:
+    Type: String
+
+# ----------------------------
+# --Mappings
+# ----------------------------
+Mappings:
+
+  ResourceMap:
+    Name:
+      Cluster:              "cluster"
+      LogGroup:             "logs-cluster"
+
+# ----------------------------
+# --Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- CloudWatchLogs Group
+  # ------------------------------------------------------------------------------------------------
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, LogGroup ]
+      RetentionInDays: 7
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, LogGroup ]
+
+  # ------------------------------------------------------------------------------------------------
+  # -- ECS Cluster
+  # ------------------------------------------------------------------------------------------------
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      CapacityProviders:
+        - FARGATE
+      ClusterName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, Cluster ]
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Configuration:
+        ExecuteCommandConfiguration:
+          LogConfiguration:
+            CloudWatchEncryptionEnabled: false
+            CloudWatchLogGroupName:   !Sub
+              - "${SystemName}-${Environment}-${name}"
+              - "name": !FindInMap [ ResourceMap, Name, LogGroup ]
+            # S3BucketName: "cluster-logs-s3"               # This s3 bucket is out of cfn's control
+            # S3EncryptionEnabled: false
+            # S3KeyPrefix: !Sub "${SystemName}"
+          Logging: OVERRIDE
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, Cluster ]
+
+# ----------------------------
+# --Outputs
+# ----------------------------
+Outputs:
+
+  # ECS Cluster
+  Cluster:
+    Value: !Ref Cluster
+    Export:
+      Name: !Sub "Cluster-${AWS::StackName}"
+
+  # Log Group
+  LogGroup:
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub "LogGroup-${AWS::StackName}"

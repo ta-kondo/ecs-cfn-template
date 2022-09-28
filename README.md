@@ -41,7 +41,7 @@ AWSアカウントでCloudformationが実行できること(各リソースを�
         - [テンプレートの指定]
           - S3バケットへアップロードしたファイルのうち、`cloudformation/stacks/Nginx/purpose/develop.yml`のオブジェクトURLをテンプレートに指定
 
-            ex) 「https://cloudformation-jads-innovation-lab.s3.ap-northeast-1.amazonaws.com/cloudformation/stacks/Nginx/purpose/develop.yml」
+            ex) 「https:// < Your S3 BucketName > .s3.ap-northeast-1.amazonaws.com/cloudformation/stacks/Nginx/purpose/develop.yml」
 
     1. 必要事項を入力し、スタックを実行
 

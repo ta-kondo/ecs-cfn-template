@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Create a VPC with Multi AZ subnets
+
+# ----------------------------
+# --Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+
+  Environment:
+    Type: String
+
+  CidrBlock:
+    Type: String
+    Default: "172.31.0.0/24"
+    Description: "Select the third octet from 0 to 255, so that the range is from 172.31.0.0/24 to 172.31.255.0/24."
+
+# ----------------------------
+# --Mappings
+# ----------------------------
+Mappings:
+
+  ResourceMap:
+    Name:
+      VPC:                  "vpc"
+      InternetGateway:      "igw"
+      RouteTablePublic:     "rtb-external"
+      RouteTablePrivate:    "rtb-internal"
+      SubnetPublic1:        "subnet-public-1"
+      SubnetPublic2:        "subnet-public-2"
+      SubnetPrivate1:       "subnet-private-1"
+      SubnetPrivate2:       "subnet-private-2"
+
+# ----------------------------
+# --Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- VPC
+  # ------------------------------------------------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub "${CidrBlock}"
+      EnableDnsHostnames: false
+      EnableDnsSupport: true
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, VPC ]
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Internet Gateway
+  # ------------------------------------------------------------------------------------------------
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, InternetGateway ]
+
+  # Attach!
+  IgwAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Subnet
+  # ------------------------------------------------------------------------------------------------
+  # --------------------------
+  # Public Subnet
+  # --------------------------
+  SubnetPublic1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt VPC.CidrBlock, 16, 4 ] ]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, SubnetPublic1 ]
+  SubnetPublic2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs "" ]
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt VPC.CidrBlock, 16, 4 ] ]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, SubnetPublic2 ]
+
+  # --------------------------
+  # Private Subnet
+  # --------------------------
+  SubnetPrivate1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs "" ]
+      CidrBlock: !Select [ 8, !Cidr [ !GetAtt VPC.CidrBlock, 16, 4 ] ]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, SubnetPrivate1 ]
+  SubnetPrivate2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 2, !GetAZs "" ]
+      CidrBlock: !Select [ 9, !Cidr [ !GetAtt VPC.CidrBlock, 16, 4 ] ]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, SubnetPrivate2 ]
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Route Table
+  # ------------------------------------------------------------------------------------------------
+  # --------------------------
+  # Public
+  # --------------------------
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, RouteTablePublic ]
+  RoutePublic:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref RouteTablePublic
+
+  # Attach!
+  RtbAssociationPublic1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      SubnetId: !Ref SubnetPublic1
+  RtbAssociationPublic2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePublic
+      SubnetId: !Ref SubnetPublic2
+
+  # --------------------------
+  # Private
+  # --------------------------
+  RouteTablePrivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, RouteTablePrivate ]
+
+  # Attach!
+  RtbAssociationPrivate1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      SubnetId: !Ref SubnetPrivate1
+  RtbAssociationPrivate2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTablePrivate
+      SubnetId: !Ref SubnetPrivate2
+
+# ----------------------------
+# --Outputs
+# ----------------------------
+Outputs:
+
+  # VPC
+  VPC:
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "VPC-${AWS::StackName}"
+  CidrBlock:
+    Value: !Sub ${CidrBlock}
+    Export:
+      Name: !Sub "Cidr-${AWS::StackName}"
+
+  # Subnet
+  SubnetPublic1:
+    Value: !Ref SubnetPublic1
+    Export:
+      Name: !Sub "SubnetPublic1-${AWS::StackName}"
+  SubnetPublic2:
+    Value: !Ref SubnetPublic2
+    Export:
+      Name: !Sub "SubnetPublic2-${AWS::StackName}"
+  SubnetPrivate1:
+    Value: !Ref SubnetPrivate1
+    Export:
+      Name: !Sub "SubnetPrivate1-${AWS::StackName}"
+  SubnetPrivate2:
+    Value: !Ref SubnetPrivate2
+    Export:
+      Name: !Sub "SubnetPrivate2-${AWS::StackName}"
+
+  # RouteTable
+  RouteTablePublic:
+    Value: !Ref RouteTablePublic
+    Export:
+      Name: !Sub "RouteTablePublic-${AWS::StackName}"
+  RouteTablePrivate:
+    Value: !Ref RouteTablePrivate
+    Export:
+      Name: !Sub "RouteTablePrivate-${AWS::StackName}"

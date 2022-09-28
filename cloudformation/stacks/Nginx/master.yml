@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Combine templates here
+
+# ----------------------------
+# -- Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+    Default: "nginx-test"
+
+  Environment:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+      - "stg"
+      - "prd"
+
+  BucketName:
+    Type: String
+    Default: "cloudformation"
+
+  TemplatePath:
+    Type: String
+    Default: "cloudformation/templates"
+
+  TurnOnECS:
+    Type: String
+    AllowedValues:
+      - "On"
+      - "Off"
+
+  # for develop
+  CidrBlock:
+    Type: String
+    Default: "172.31.0.0/24"
+
+# ----------------------------
+# -- Mappings
+# ----------------------------
+Mappings:
+
+  EnvionmentalMap:
+    dev:
+      CidrBlock:       "172.31.9.0/24"
+    stg:
+      CidrBlock:       "172.31.99.0/24"
+    prd:
+      CidrBlock:       "172.31.199.0/24"
+
+# ----------------------------
+# -- Conditions
+# ----------------------------
+Conditions:
+  IsDevelopment:  !Equals [ !Sub "${Environment}", "dev" ]
+  ECSWorking:     !Equals [ !Sub "${TurnOnECS}", "On" ]
+
+# ----------------------------
+# -- Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- VPC
+  # ------------------------------------------------------------------------------------------------
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatePath}/network/VPC.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+        CidrBlock:          !If
+          - IsDevelopment
+          - !Sub ${CidrBlock}
+          - !FindInMap [ EnvionmentalMap, !Ref Environment, CidrBlock ]
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Security Group
+  # ------------------------------------------------------------------------------------------------
+  SGStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatePath}/network/SecurityGroup.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+        VPC:                !GetAtt VPCStack.Outputs.VPC
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Loadbalancer
+  # ------------------------------------------------------------------------------------------------
+  # ALB
+  ALBStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: ECSWorking
+    DependsOn:
+      - ClusterStack
+      - TaskStack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatePath}/network/Loadbalancer.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+        VPC:                !GetAtt VPCStack.Outputs.VPC
+        Subnets:            !Join
+          - ","
+          - - !GetAtt VPCStack.Outputs.SubnetPublic1
+            - !GetAtt VPCStack.Outputs.SubnetPublic2
+        SecurityGroups:     !Join
+          - ","
+          - - !GetAtt SGStack.Outputs.SecurityGroupELB
+        ServiceTargetPort:  !GetAtt TaskStack.Outputs.TaskPort
+
+  # ------------------------------------------------------------------------------------------------
+  # -- ECS
+  # ------------------------------------------------------------------------------------------------
+  # Cluster
+  ClusterStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatePath}/container/ECS.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+        VPC:                !GetAtt VPCStack.Outputs.VPC
+
+  # Service
+  ServiceStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: ECSWorking
+    DependsOn:
+      - ClusterStack
+      - TaskStack
+      - ALBStack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatePath}/container/ECSService.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+        Subnets:            !Join
+          - ","
+          - - !GetAtt VPCStack.Outputs.SubnetPublic1
+            - !GetAtt VPCStack.Outputs.SubnetPublic2
+        SecurityGroups:     !Join
+          - ","
+          - - !GetAtt SGStack.Outputs.SecurityGroupWeb
+        Cluster:            !GetAtt ClusterStack.Outputs.Cluster
+        TaskDefinition:     !GetAtt TaskStack.Outputs.TaskDefinition
+        TargetGroup:        !GetAtt ALBStack.Outputs.Target
+        ServiceContainer:   !GetAtt TaskStack.Outputs.ContainerName
+        ServiceTargetPort:  !GetAtt TaskStack.Outputs.TaskPort
+
+  # Task
+  TaskStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: ECSWorking
+    DependsOn:
+      - ClusterStack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/${TemplatePath}/container/task/Nginx.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+
+# ----------------------------
+# -- Outputs
+# ----------------------------
+Outputs:
+
+  # VPC
+  VPC:
+    Value: !GetAtt VPCStack.Outputs.VPC
+    Export:
+      Name: !Sub "VPC-${AWS::StackName}"
+  CidrBlock:
+    Value: !GetAtt VPCStack.Outputs.CidrBlock
+    Export:
+      Name: !Sub "Cidr-${AWS::StackName}"
+
+  # Security Group
+  SecurityGroupWeb:
+    Value: !GetAtt SGStack.Outputs.SecurityGroupWeb
+    Export:
+      Name: !Sub "SecurityGroupWeb-${AWS::StackName}"
+  SecurityGroupELB:
+    Value: !GetAtt SGStack.Outputs.SecurityGroupELB
+    Export:
+      Name: !Sub "SecurityGroupELB-${AWS::StackName}"
+
+  # ELB
+  ELB:
+    Condition: ECSWorking
+    Value: !GetAtt ALBStack.Outputs.Loadbalancer
+    Export:
+      Name: !Sub "ELB-${AWS::StackName}"
+  ELBDNSName:
+    Condition: ECSWorking
+    Value: !GetAtt ALBStack.Outputs.LoadbalancerDNSName
+    Export:
+      Name: !Sub "ELB-DNSName-${AWS::StackName}"
+
+  # ECS
+  Cluster:
+    Value: !GetAtt ClusterStack.Outputs.Cluster
+    Export:
+      Name: !Sub "Cluster-${AWS::StackName}"
+  Task:
+    Condition: ECSWorking
+    Value: !GetAtt TaskStack.Outputs.TaskDefinition
+    Export:
+      Name: !Sub "Task-${AWS::StackName}"

@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Loadbalancer
+
+# ----------------------------
+# --Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+
+  Environment:
+    Type: String
+
+  VPC:
+    Type: String
+
+  Subnets:
+    Type: CommaDelimitedList
+
+  SecurityGroups:
+    Type: CommaDelimitedList
+
+  ServiceTargetPort:
+    Type: Number
+
+# ----------------------------
+# --Mappings
+# ----------------------------
+Mappings:
+
+  ResourceMap:
+    Name:
+      Loadbalancer:         "alb"
+      TargetGroup:          "alb-target"
+
+# ----------------------------
+# --Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Applicaton Loadbalancer
+  # ------------------------------------------------------------------------------------------------
+  # ALB
+  ApplicationLoadbalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: "ipv4"
+      Scheme: "internet-facing"
+      Type: "application"
+      LoadBalancerAttributes:
+        - Key: deletion_protection.enabled
+          Value: false
+        - Key: access_logs.s3.enabled
+          Value: false
+        - Key: idle_timeout.timeout_seconds
+          Value: 60
+      Name: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, Loadbalancer ]
+      Subnets: !Ref Subnets
+      SecurityGroups: !Ref SecurityGroups
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, Loadbalancer ]
+
+  # Target
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VPC
+      Name: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, TargetGroup ]
+      TargetType: "ip"
+      IpAddressType: "ipv4"
+      Protocol: "HTTP"
+      ProtocolVersion: "HTTP1"
+      Port: !Ref ServiceTargetPort
+      # +- HelthCheck --------
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/"
+      HealthCheckPort: !Ref ServiceTargetPort
+      HealthCheckProtocol: "HTTP"
+      HealthCheckTimeoutSeconds: 6
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 6
+      Matcher:
+        HttpCode: "200-399"
+      # +---------------------
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, TargetGroup ]
+
+  # Attach!
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - ApplicationLoadbalancer
+      - TargetGroup
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref TargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref ApplicationLoadbalancer
+      Port: 80
+      Protocol: HTTP
+
+# ----------------------------
+# --Outputs
+# ----------------------------
+Outputs:
+
+  # ApplicationLoadbalancer
+  Loadbalancer:
+    Value: !Ref ApplicationLoadbalancer
+    Export:
+      Name: !Sub "ALB-${AWS::StackName}"
+  LoadbalancerDNSName:
+    Value: !GetAtt [ ApplicationLoadbalancer, DNSName ]
+    Export:
+      Name: !Sub "ALB-DNSName-${AWS::StackName}"
+  Target:
+    Value: !Ref TargetGroup
+    Export:
+      Name: !Sub "Target-${AWS::StackName}"

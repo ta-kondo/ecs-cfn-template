@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  ECS Task Definitions
+
+# ----------------------------
+# --Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+
+  Environment:
+    Type: String
+
+# ----------------------------
+# --Mappings
+# ----------------------------
+Mappings:
+
+  ResourceMap:
+    Name:
+      LogGroup:             "logs-nginx"
+      TaskExecutionRole:    "task-execution-role"
+      TaskRole:             "task-role"
+      TaskDefinition:       "task-nginx"
+      Nginx:                "nginx"
+
+# ----------------------------
+# --Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- CloudWatchLogs Group
+  # ------------------------------------------------------------------------------------------------
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, LogGroup ]
+      RetentionInDays: 7
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, LogGroup ]
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Role
+  # ------------------------------------------------------------------------------------------------
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, TaskExecutionRole ]
+      Description: "Roles required when executing a task"
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+      Policies:
+        # 他にあれば追加
+        Ref: AWS::NoValue
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, TaskExecutionRole ]
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, TaskRole ]
+      Description: "Roles that execute AWS API from containers"
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+               - ecs-tasks.amazonaws.com
+               - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceEventsRole
+      Policies:
+        # コンテナ内からAWSにアクセスしたければ追加
+        Ref: AWS::NoValue
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, TaskRole ]
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Tasks
+  # ------------------------------------------------------------------------------------------------
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn:
+      - TaskExecutionRole
+      - TaskRole
+    Properties:
+      ContainerDefinitions:
+        # --------------------
+        # -- Nginx
+        # --------------------
+        - Image: "public.ecr.aws/nginx/nginx:latest"
+          Name: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, Nginx ]
+          Cpu: 256
+          Memory: 128
+          Command: !Ref AWS::NoValue
+          EntryPoint: !Ref AWS::NoValue
+          Essential: true
+          PortMappings:
+            - HostPort: 80
+              Protocol: tcp
+              ContainerPort: 80
+          # Environment:
+          #   - Key: xxxxx
+          #     Value: yyyyy
+          # HealthCheck:
+          #   command:
+          #       - "CMD-SHELL"
+          #       - "echo hello"
+          #   interval: 5
+          #   retries: 2
+          #   timeout: 3
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-create-group: true
+              awslogs-stream-prefix: "nginx"
+      Cpu: "256"
+      Memory: "512"
+      NetworkMode: "awsvpc"
+      EphemeralStorage:
+        SizeInGiB: 21     # GB
+      ExecutionRoleArn: !Ref TaskExecutionRole    # Taskを作成して実行するRole（log, ecr, ssm）
+      TaskRoleArn: !Ref TaskRole                  # Taskが稼働した際のRole（s3, ssm, etc）
+      Family: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, TaskDefinition ]
+      RequiresCompatibilities:
+        - FARGATE
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, TaskDefinition ]
+
+# ----------------------------
+# --Outputs
+# ----------------------------
+Outputs:
+
+  # Role
+  LogGroup:
+    Value: !Ref LogGroup
+    Export:
+      Name: !Sub "LogGroup-${AWS::StackName}"
+
+  # Role
+  TaskRole:
+    Value: !Ref TaskRole
+    Export:
+      Name: !Sub "TaskRole-${AWS::StackName}"
+  TaskExecutionRole:
+    Value: !Ref TaskExecutionRole
+    Export:
+      Name: !Sub "TaskExecutionRole-${AWS::StackName}"
+
+  # TaskDefinition
+  TaskDefinition:
+    Value: !Ref TaskDefinition
+    Export:
+      Name: !Sub "TaskDefinition-${AWS::StackName}"
+
+  # Main Container
+  ContainerName:
+    Value: !Sub
+      - "${SystemName}-${Environment}-${name}"
+      - "name": !FindInMap [ ResourceMap, Name, Nginx ]
+    Export:
+      Name: !Sub "ContainerName-${AWS::StackName}"
+  # Port for Service
+  TaskPort:
+    Value: 80           # == HostPort
+    Export:
+      Name: !Sub "TaskPort-${AWS::StackName}"

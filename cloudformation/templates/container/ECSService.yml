@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  ECS Service
+
+# ----------------------------
+# -- Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+
+  Environment:
+    Type: String
+
+  Subnets:
+    Type: CommaDelimitedList
+
+  SecurityGroups:
+    Type: CommaDelimitedList
+
+  Cluster:
+    Type: String
+
+  TaskDefinition:
+    Type: String
+
+  TargetGroup:
+    Type: String
+
+  ServiceContainer:
+    Type: String
+
+  ServiceTargetPort:
+    Type: Number
+
+# ----------------------------
+# -- Mappings
+# ----------------------------
+Mappings:
+
+  ResourceMap:
+    Name:
+      Service:              "service"
+      LogGroup:             "logs-cluster"
+
+# ----------------------------
+# -- Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- ECS Service
+  # ------------------------------------------------------------------------------------------------
+  Service:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref Cluster
+      LaunchType: "FARGATE"
+      TaskDefinition: !Ref TaskDefinition
+      DeploymentController:
+        Type: "ECS"
+      DesiredCount: 2
+      EnableECSManagedTags: true
+      EnableExecuteCommand: true
+      HealthCheckGracePeriodSeconds: 30
+      LoadBalancers:
+        - ContainerName: !Ref ServiceContainer
+          ContainerPort: !Ref ServiceTargetPort
+          TargetGroupArn: !Ref TargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups: !Ref SecurityGroups
+          Subnets: !Ref Subnets
+      PlatformVersion: "LATEST"
+      PropagateTags: "TASK_DEFINITION"
+      ServiceName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, Service ]
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, Service ]
+
+# ----------------------------
+# -- Outputs
+# ----------------------------
+Outputs:
+
+  # ECS Service
+  Service:
+    Value: !Ref Service
+    Export:
+      Name: !Sub "Service-${AWS::StackName}"

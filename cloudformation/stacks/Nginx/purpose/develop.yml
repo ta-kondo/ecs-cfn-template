@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  Test ECS Infrastructure by Nginx container
+
+# ----------------------------
+# -- Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+    Default: "nginx"
+
+  Environment:
+    Type: String
+    Default: "dev"
+    AllowedValues:
+      - "dev"
+
+  BucketName:
+    Type: String
+    Default: "cloudformation"
+
+  TurnOnECS:
+    Type: String
+    Default: "On"
+    AllowedValues:
+      - "On"
+      - "Off"
+
+  # Assumptions that many people try.
+  CidrBlock:
+    Type: String
+    Default: "172.31.0.0/24"
+    Description: "Select the third octet from 0 to 255, so that the range is from 172.31.0.0/24 to 172.31.255.0/24."
+
+# ----------------------------
+# -- Conditions
+# ----------------------------
+Conditions:
+  IsDevelopment:  !Equals [ !Sub "${Environment}", "dev" ]
+  ECSWorking:     !Equals [ !Sub "${TurnOnECS}", "On" ]
+
+# ----------------------------
+# -- Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- All resources
+  # ------------------------------------------------------------------------------------------------
+  MasterStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${BucketName}.s3.${AWS::Region}.amazonaws.com/cloudformation/stacks/Nginx/master.yml"
+      Parameters:
+        SystemName:         !Sub "${SystemName}"
+        Environment:        !Sub "${Environment}"
+        BucketName:         !Sub "${BucketName}"
+        TurnOnECS:          !Sub "${TurnOnECS}"
+        CidrBlock:          !Sub "${CidrBlock}"
+
+# ----------------------------
+# -- Outputs
+# ----------------------------
+Outputs:
+
+  # VPC
+  VPC:
+    Value: !GetAtt MasterStack.Outputs.VPC
+    Export:
+      Name: !Sub "VPC-${AWS::StackName}"
+  CidrBlock:
+    Value: !GetAtt MasterStack.Outputs.CidrBlock
+    Export:
+      Name: !Sub "Cidr-${AWS::StackName}"
+
+  # DNSName
+  ELBDNSName:
+    Condition: ECSWorking
+    Value: !GetAtt MasterStack.Outputs.ELBDNSName
+    Export:
+      Name: !Sub "ELB-DNSName-${AWS::StackName}"

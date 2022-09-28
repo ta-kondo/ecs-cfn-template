@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  SecurityGroups
+
+# ----------------------------
+# --Parameters
+# ----------------------------
+Parameters:
+
+  SystemName:
+    Type: String
+
+  Environment:
+    Type: String
+
+  VPC:
+    Type: String
+
+# ----------------------------
+# --Mappings
+# ----------------------------
+Mappings:
+
+  ResourceMap:
+    Name:
+      SecurityGroupWeb:     "sg-web"
+      SecurityGroupELB:     "sg-elb"
+
+# ----------------------------
+# --Resources
+# ----------------------------
+Resources:
+
+  # ------------------------------------------------------------------------------------------------
+  # -- Security Group
+  # ------------------------------------------------------------------------------------------------
+  SecurityGroupWeb:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: "ELB to Web by HTTP"
+      GroupName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, SecurityGroupWeb ]
+      SecurityGroupIngress:
+        # Only allow inbound access to ECS from the ELB
+        - SourceSecurityGroupId: !Ref SecurityGroupELB
+          IpProtocol: -1
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, SecurityGroupWeb ]
+  SecurityGroupELB:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPC
+      GroupDescription: "Internet to ELB by HTTP"
+      GroupName: !Sub
+        - "${SystemName}-${Environment}-${name}"
+        - "name": !FindInMap [ ResourceMap, Name, SecurityGroupELB ]
+      SecurityGroupIngress:
+        # Allow access from anywhere to our ECS services
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+      Tags:
+        - Key: "SystemName"
+          Value: !Sub "${SystemName}"
+        - Key: "Environment"
+          Value: !Sub "${Environment}"
+        - Key: "Name"
+          Value: !Sub
+            - "${SystemName}-${Environment}-${name}"
+            - "name": !FindInMap [ ResourceMap, Name, SecurityGroupELB ]
+
+# ----------------------------
+# --Outputs
+# ----------------------------
+Outputs:
+
+  # SecurityGroup
+  SecurityGroupWeb:
+    Value: !Ref SecurityGroupWeb
+    Export:
+      Name: !Sub "SecurityGroupWeb-${AWS::StackName}"
+  SecurityGroupELB:
+    Value: !Ref SecurityGroupELB
+    Export:
+      Name: !Sub "SecurityGroupELB-${AWS::StackName}"
